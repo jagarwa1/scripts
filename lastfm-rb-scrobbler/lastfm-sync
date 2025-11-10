@@ -1,0 +1,20 @@
+#!/bin/bash
+# upload a scrobbler log file from music player to last FM service
+
+# -f [path to .scrobbler.log]
+# -o [time offset in hours]
+if [ -z $1 ]; then
+  if [ -a .scrobbler.log ]; then
+    echo "using .scrobbler.log in curr dir"
+  else
+    echo "run with path to scrobbler log"
+    exit
+  fi
+fi
+
+EXE="build/rb-scrobbler"
+TIME_OFFSET=$(date +%z | sed -e 's/0//g')
+
+# run the scrobbler in docker container
+docker run --rm rb-scrobbler:alpha "$EXE" -f "$LOG_FILE" -o "$TIME_OFFSET"
+# -n "delete-on-success"

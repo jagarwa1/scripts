@@ -1,0 +1,64 @@
+#!/bin/bash
+
+usage(){
+  echo "Usage: $0 <SRC> <DEST>" 1>&2;
+  exit 1;
+}
+
+# requires SRC and DEST
+if [ "$#" -lt 2 ]; then
+  usage
+fi
+
+SRC=$1
+DEST=$2
+
+[[ "${SRC}" != */ ]] && SRC="${SRC}/"
+[[ "${DEST}" != */ ]] && DEST="${DEST}/"
+
+# use exiftool to get the metadata of a file
+# this is used because we will change the name of the file based on what metadata the file has
+# if no model is present, then the name change would fail. so we check that ahead of time.
+# args: $1 - filename
+get_metadata(){
+        local file="$1" # expects full path
+
+        exif_result=$(exiftool -CreateDate -DateTimeOriginal -Model "$file")
+
+        create_date=$(echo "$exif_result" | grep "Create Date" | awk -F': ' '{print $2}')
+
+        date_time_original=$(echo "$exif_result" | grep "Date/Time Original" | awk -F': ' '{print $2}')
+
+        camera_model_name=$(echo "$exif_result" | grep "Camera Model Name" | awk -F': ' '{print $2}')
+
+}
+
+# this is slower than running exiftool on an entire dir. but i did it this way do we can choose whether to use Model or not.
+# investigate -f tag (put '-' for any empty tags) and -m (ignore minor warnings)
+# process file of type JPG, MP4, AVI, maybe HEIC (those are the extensions that have been tested)
+# different commands for exiftool based on if model name is present or not
+# args: $1 - filename of file to process
+# returns: n/a
+process_file(){
+    local name="$1" # this is the full /path/filename
+#    get_metadata "$name"
+
+#    echo "Analyzing $name"
+#    echo "$create_date, $date_time_original, $camera_model"
+#    if [ "$camera_model_name" ]; then
+        exiftool -ext+ AVI -v0 -P -f -r \
+            '-Directory<'"$DEST"'${dateTimeOriginal#;DateFmt("%Y/%m/%d")}' \
+            '-Filename<${dateTimeOriginal#;DateFmt("%Y_%m_%d_%H-%M-%S")}_${Model}%-c.${FileTypeExtension}' \
+            "$name";
+#    else
+#        exiftool -ext+ AVI -v0 -P -r \
+#            '-Directory<'"$DEST"'${dateTimeOriginal#;DateFmt("%Y/%m/%d")}' \
+#            '-Filename<${dateTimeOriginal#;DateFmt("%Y_%m_%d_%H-%M-%S")}_%-c.${FileTypeExtension}' \
+#            "$name";
+#    fi
+
+}
+
+echo "$(date)"
+echo "Working on $SRC dir..."
+process_file "$SRC"
