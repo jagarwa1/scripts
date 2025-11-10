@@ -6,7 +6,7 @@ organize photos based on exif data
 * organize-and-move
 
 upload scrobble data to lastfm
-* lastfm-sync
+* lastfm-sync. containerized version of [rb-scrobbler](https://github.com/jeselnik/rb-scrobbler)
 
 then some other misc ones
 
