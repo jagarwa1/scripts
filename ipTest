@@ -1,0 +1,12 @@
+#!/bin/bash
+
+exec_loop(){
+    local container_list=("$@") # @ means any number of args
+    for name in "${container_list[@]}"; do
+        ip=$(docker exec "$name" wget -qO- https://ipinfo.io | jq -r '.ip')
+        echo "$name: $ip"
+    done
+}
+
+echo "local ip is $(wget -qO- https://ipinfo.io | jq -r '.ip')"
+exec_loop gluetun prowlarr qbittorrent

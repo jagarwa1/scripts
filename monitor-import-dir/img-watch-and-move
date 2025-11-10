@@ -1,0 +1,53 @@
+#!/bin/bash
+
+usage(){
+  echo "Usage: $0 <SRC> <DEST>" 1>&2;
+  exit 1;
+}
+
+# exiftool command wrapper
+# -P (preserve mod time) -v0 (verbose 0) -r (recurse)
+# -f (replace empty tag data with '-') -m (replace empty tag data with blank)
+# args: $1 - source dir to act on
+#       $2 - destination dir
+# returns: n/a
+process_dir(){
+  local source_dir="$1"
+  local dest_dir="$2"
+  exiftool -ext+ AVI -v0 -P -m -r \
+    '-Directory<'"$DEST"'${dateTimeOriginal#;DateFmt("%Y/%m/%d")}' \
+    '-Filename<${dateTimeOriginal#;DateFmt("%Y_%m_%d_%H-%M-%S")}_${Model}%-c.${FileTypeExtension}' \
+    "$source_dir";
+}
+
+# requires SRC and DEST
+if [ "$#" -lt 2 ]; then
+  usage
+fi
+
+SRC=$1
+DEST=$2
+
+[[ "${SRC}" != */ ]] && SRC="${SRC}/"
+[[ "${DEST}" != */ ]] && DEST="${DEST}/"
+
+if [ -d "$1" ]; then
+  while true; do
+    echo "Beginning Stage 1 of monitoring $SRC"
+
+    # file create triggers wakeup/removes blocking
+    # to exclude dot files: --exclude "^$SRC\."
+    inotifywait -e create "$SRC"
+
+    # wait again to see when file creation and modification stops
+    echo "File creation detected! Wakeup triggered, onto Stage 2!"
+    inotifywait -e create -e modify -t 60 -m "$SRC" > /dev/null 2>&1
+
+    echo "No new file activity in 60 seconds. Assuming upload is finished. Onto Stage 3."
+    process_dir "$SRC" "$DEST"
+
+    echo "Resetting to Stage 1..."
+  done
+else
+  echo "Directory to monitor does not exist."
+fi

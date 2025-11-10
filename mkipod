@@ -1,0 +1,117 @@
+#!/bin/bash
+
+shopt -s globstar nullglob
+COLUMNS=$(tput cols)
+
+usage(){
+  echo "Usage: $0 [-n | -v] <SRC> <DEST>" 1>&2;
+  echo "-n        dry run" 1>&2;
+  echo "-v        verbose" 1>&2;
+  exit 1;
+}
+
+spinner() {
+	local s="|/-#\\"
+	local -i i=0
+	local length=$((COLUMNS/2))
+	while :; do
+		((i++))
+		echo -ne '['
+		for j in $(seq 1 $length); do echo -ne "${s:i%4:1}" >&2; done
+		echo -ne "]\r"
+	  	sleep .1
+	done
+}
+
+progress-bar() {
+	local curr=$1
+	local len=$2
+	local length=$((COLUMNS/2))
+	local percent_done=$((curr * 100 / len))
+	local num_bars=$((percent_done * length / 100))
+
+	local bar_char="#"
+	local empty_char="-"
+	local i=0
+	local s='['
+	for ((i = 0; i < num_bars; i++)); do
+	        s+=$bar_char
+	done
+	for ((i = num_bars; i < length; i++)); do
+	        s+=$empty_char
+	done
+	s+=']'
+
+    echo -ne "$s $curr/$len ($percent_done%)\r"
+}
+
+process_file() {
+    local file=$1
+    magick "$file" -resize 300x300 "${file%.*}".jpg
+}
+
+# delete the extraneous jellyfin image files not used on ipod
+del_extra_files(){
+	echo "Deleting the unnecessary image files..."
+	spinner & spinner_pid=$!
+
+	find "$DEST" -maxdepth 2 -regex  '.*\(jpg\|png\)$' > /dev/null
+
+	kill $spinner_pid
+}
+
+# resize the cover art for ipod
+resize_cover_art(){
+  	echo "Resizing the cover art..."
+  	echo "--- Finding files now..."
+	# files=(./**/*.jpg)
+	mapfile -t files < <(find "$DEST" -maxdepth 3 -name "*.jpg")
+	len=${#files[@]}
+	echo "--- Found $len cover art files"
+
+	i=0
+	for file in "${files[@]}"; do
+		progress-bar "$((i+1))" "$len"
+	    process_file "$file"
+	    ((i++))
+	done
+
+	echo
+}
+
+# requires SRC and DEST
+if [ "$#" -lt 2 ]; then
+  	usage
+fi
+
+SRC=$1
+DEST=$2
+
+dry=0
+verbose=0
+while getopts "h?nvdr" flag;
+do
+	case "${flag}" in
+		d)	del_extra_files
+			exit
+		;;
+		r) 	resize_cover_art
+			exit
+		;;
+		n) 	dry=1
+		;;
+		v) 	verbose=1
+		;;
+		h|\?)	usage
+		;;
+	esac
+done
+# handle positional arguments after the optional
+shift $((OPTIND - 1))
+
+# need to echo the literal '-n' which needs to -e and octal rep of -
+transfercoder -E "-codec:a libvorbis -q:a 7" -r "rsync -a" $([ $verbose -eq 1 ] && echo '-v') $([ $dry -eq 1 ] && echo -e '\055n') "$SRC" "$DEST"
+
+del_extra_files
+
+resize_cover_art

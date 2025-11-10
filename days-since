@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# get the days since a certain date
+
+past_date=$1
+
+days=$(( ($(date +%s) - $(date +%s -ud "$past_date")) / 3600 / 24 ))
+years=$(( ($days * 100) / 365 ))
+years=$(echo "$years" | sed 's/\(..\)$/.\1/')
+
+echo "$days days"
+echo "$years years"
+
