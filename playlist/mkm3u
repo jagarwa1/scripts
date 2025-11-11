@@ -1,0 +1,191 @@
+#!/usr/bin/python3
+import xml.etree.ElementTree as ET
+import argparse, sys
+import os, re, fnmatch
+import mutagen
+from mutagen.easyid3 import EasyID3
+from mutagen.mp3 import MP3
+
+def add_trailing_slash(directory_path):
+    return os.path.join(directory_path, '')  # Appending an empty string adds the trailing slash
+
+# https://stackoverflow.com/questions/1724693/find-a-file-in-python#1724723
+def find(pattern, path):
+    result = []
+    for root, dirs, files in os.walk(path):
+        for name in files:
+#            print(f"checking {name} against {pattern}")
+            if fnmatch.fnmatch(name, pattern):
+                result.append(os.path.join(root, name))
+    return result
+
+def parse_xml(xmlfile, old_root, new_root, new_exts, plist_name):
+    print("parsing", xmlfile)
+    tree = ET.parse(xmlfile)
+    root = tree.getroot()
+
+    if plist_name is None:
+        plist_name = root[2].text + ".m3u"
+
+    print(f"Setting title to {plist_name}")
+
+    # Create an M3U file to write our results to
+    with open(f"{plist_name}", 'w') as f:
+        # Write the header of the M3U file
+        f.write('#EXTM3U\n')
+        # Loop through each PlaylistItem and add its path to the M3U file
+        for playlist_item in root.findall('.//PlaylistItem'):
+            path = playlist_item.find('Path').text
+            if new_root is not None:
+                path = path.replace(old_root, new_root)
+            if new_exts is not None:
+                path = path.replace('flac', new_exts)
+
+            f.write(path + '\n')
+
+    print(f"Successfully created {plist_name}")
+
+# TODO handle MP3, MP4, FLAC files
+def read_metadata(filepath):
+    metadata = {}
+    try:
+        if filepath.endswith('.mp3'):
+            audio = MP3(filepath, ID3=EasyID3)
+        else:
+            audio = mutagen.File(filepath)
+        try:
+            metadata['artist'] = audio['artist'][0]
+        except:
+            print("check for artists tag or whatnot")
+            print(audio)
+            metadata['artist'] = audio['artists'][0]
+        
+        metadata['album'] = audio['album'][0]
+        metadata['track'] = audio['title'][0]
+    except KeyError as e:
+        print(f"Exception: {e} for {filepath}")
+        metadata['artist'] = ''
+        metadata['album'] = ''
+        metadata['track'] = ''
+
+    return metadata
+
+# TODO update m3u file to new file paths
+def convert_old_m3u(old_m3u_file, old_root, new_root_path, new_exts):
+    with open(old_m3u_file, 'r') as f:
+        old_lines = f.readlines()
+
+    # Create an M3U file to write our results to
+    with open('new_playlist.m3u', 'w') as f:
+        # Write the header of the M3U file
+        f.write('#EXTM3U\n')
+        found = []
+        not_found = []
+
+        # Loop through each line in the old M3U file
+        for line in old_lines:
+            if line.strip():
+                root, the_rest = line.strip().rsplit(old_root)
+                artist, album, song = the_rest.strip().rsplit('/', 2)
+                basename, ext = os.path.splitext(song)
+                # regex = r"(?<=\d\s)[^\.]+|(?<=\d\-)[^\.]+"
+                # prog = re.compile(regex)
+                # captured_result = prog.search(song_name)
+                # result = find(basename + ext, f"/media/IceCube/iPod-lib/{artist}/{album}")
+                # if result is None:
+                    # not_found.append(f"{artist}/{album}/{song}")
+                # elif result is not None:
+                    # found.append(f"{artist}/{album}/{song}")
+
+    print("Found matches for the following: ")
+    for element in found:
+        print(f"======== {element}")
+    print("Did not find matches for the following: ")
+    for element in not_found:
+        print(f"======== {element}")
+    print("Successfully created 'new_playlist.m3u'")
+
+
+def create_m3u(filepath, music_library, new_music_root, plist_name):
+    found = []
+    not_found = []
+    to_write = []
+    if plist_name is None:
+        plist_name = "playlist.m3u"
+    with open(filepath, 'r') as f:
+        lines = f.readlines()
+
+    try:
+        with open(plist_name, 'w') as f:
+            for line in lines:
+                metadata = line.strip().rsplit('-')
+                track = metadata[0].strip()
+                artist = metadata[1].strip()
+                result = find('*'+track+'*', f"{music_library}")
+                if result is None:
+                    not_found.append({'artist': artist, 'track': track})
+                elif result:
+                    found.append({'artist': artist, 'track': track})
+                    for item in result:
+                        metadata = read_metadata(item)
+                        if metadata['artist'].lower() == artist.lower() and metadata['track'].lower() == track.lower():
+                            to_write.append(item.replace(music_library, new_music_root))
+
+            print("Found matches for the following: ")
+            for element in found:
+                print(f"======== {element['track']} - {element['artist']}")
+            print("Did not find matches for the following: ")
+            for element in not_found:
+                print(f"======== {element['track']} - {element['artist']}")
+
+            for element in to_write:
+                f.write(element + "\n")
+    except Exception as e:
+        print(f"{e}")
+        
+    print(f"Successfully created {plist_name}")
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(
+             prog='mkm3u',
+             description='convert an xml file or list of song titles into an m3u playlist.\n When creating m3u playlist from textfile, --music is required!')
+    parser.add_argument('file', help='file to use as input')
+    parser.add_argument('-o', '--output-file', help='specify name of output file')
+    parser.add_argument('-R', '--old-root', help='old music root to replace')
+    parser.add_argument('-r', '--new-root', help='new music root path')
+    parser.add_argument('-m', '--music', help='music library location (used for creating m3u file from list of songs')
+    parser.add_argument('-e', '--ext', help='new music ext type to replace flac with (defauls to ogg)', default='ogg')
+
+    args = parser.parse_args()
+
+    if args.file:
+        old_root = ''
+
+        if args.output_file:
+            new_plist_name = args.output_file
+            print(f"making {new_plist_name}")
+        else:
+            new_plist_name = None
+
+        if args.old_root:
+            old_root = add_trailing_slash(args.old_root)
+
+        if args.new_root:
+            dest_music_root = add_trailing_slash(args.new_root)
+        else:
+            dest_music_root = old_root
+
+        if args.file.endswith('.xml'):
+            if not args.old_root:
+                print("Old root is required for this mode.")
+                sys.exit()
+
+            parse_xml(args.file, old_root, dest_music_root, args.ext, new_plist_name)
+        else:
+            if args.music and dest_music_root:
+                create_m3u(args.file, args.music, dest_music_root, new_plist_name)
+            else:
+                parser.print_help()
+    else:
+        print("please specify a file")
