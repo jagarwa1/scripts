@@ -14,10 +14,10 @@ SCRIPTS := \
 install:
 	@echo "Creating symbolic links for scripts"
 	$(foreach script,$(SCRIPTS), echo "$(realpath $(script)) -> $(LINK_DIR)/$(shell basename $(script))"; ln -s $(realpath $(script)) $(LINK_DIR)/$(shell basename $(script));)
-    @echo "Files installed."
+	@echo "Files installed."
 
 # remove symbolic links
 uninstall:
 	@echo "Removing symbolic links for scripts"
 	$(foreach script,$(SCRIPTS), rm -f $(LINK_DIR)/$(shell basename $(script));)
-    @echo "Links removed. Uninstalled."
+	@echo "Links removed. Uninstalled."
