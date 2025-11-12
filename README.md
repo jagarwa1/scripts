@@ -8,7 +8,10 @@ organize photos based on exif data
 upload scrobble data to lastfm
 * lastfm-sync. containerized version of [rb-scrobbler](https://github.com/jeselnik/rb-scrobbler)
 
+get music library ready for ipod
+* mkipod. needs [transfercoder](https://github.com/DarwinAwardWinner/transfercoder)
+
 then some other misc ones
 
 # install
-running ```install``` will create somesymlinks for scripts. work in progress.
+running ```make install``` will create some symlinks for scripts. work in progress.
