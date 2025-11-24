@@ -55,7 +55,7 @@ del_extra_files(){
 	echo "Deleting the unnecessary image files..."
 	spinner & spinner_pid=$!
 
-	find "$DEST" -maxdepth 2 -regex  '.*\(jpg\|png\)$' > /dev/null
+	find "$DEST" -maxdepth 2 -regex  '.*\(jpg\|png\)$' -delete > /dev/null
 
 	kill $spinner_pid
 }

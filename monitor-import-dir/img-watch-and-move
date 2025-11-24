@@ -15,7 +15,9 @@ process_dir(){
   local source_dir="$1"
   local dest_dir="$2"
   exiftool -ext+ AVI -v0 -P -m -r \
+    '-Directory<'"$DEST"'${CreateDate#;DateFmt("%Y/%m/%d")}' \
     '-Directory<'"$DEST"'${dateTimeOriginal#;DateFmt("%Y/%m/%d")}' \
+    '-Filename<${CreateDate#;DateFmt("%Y_%m_%d_%H-%M-%S")}_${Model}%-c.${FileTypeExtension}' \
     '-Filename<${dateTimeOriginal#;DateFmt("%Y_%m_%d_%H-%M-%S")}_${Model}%-c.${FileTypeExtension}' \
     "$source_dir";
 }
