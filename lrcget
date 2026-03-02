@@ -1,0 +1,157 @@
+#!/bin/bash
+
+# ###################################################################### #
+# use ffprobe to read metadata from cli arg and output in json. we want  #
+# artist, title, album, and duration.                                    #
+#                                                                        #
+# args: $1 - file to act on                                              #
+#                                                                        #
+# returns: 0 - success                                                   #
+#                                                                        #
+# json metadata output                                                   #
+# {                                                                      #
+#    "format": {                                                         #
+#        "duration": "145.750000",                                       #
+#        "tags": {                                                       #
+#            "TITLE": "Another Place",                                   #
+#            "ALBUM": "Ghost of Your Guitar Solo",                       #
+#            "ARTIST": "MJ Lenderman"                                    #
+#        }                                                               #
+#    }                                                                   #
+# }                                                                      #
+# use exiftool for more consistent results                               #
+# [{                                                                     #
+#   Duration: "",                                                        #
+#   Artist: "",                                                          #
+#   Title: "",                                                           #
+#   Album: "",                                                           #
+# }]                                                                     #
+# ###################################################################### #
+
+get_metadata() {
+  filename="$1"
+#  ffprobe -v quiet -print_format json -show_entries format=duration -show_entries format_tags=album,title,artist "$filename"
+  exiftool -j -Artist -Title -Album "$1"
+} # get_metadata
+
+get_duration() {
+  ffprobe -v quiet -print_format csv -show_entries format=duration "$1"
+}
+# ###################################################################### #
+# curl GET request with url encoded content. use /api/get with duration, #
+# or /api/search if no duration. jq parses json response.                #
+# uses syncedLyrics field if it exists, else use plainLyrics.            #
+#                                                                        #
+# args: $1 - file to act on                                              #
+#                                                                        #
+# returns: 0 - success                                                   #
+#          1 - failed to find lyrics                                     #
+#          2 - track is instrumental; no lyrics found                    #
+# ###################################################################### #
+
+api_get="https:/lrclib.net/api/get"
+api_get_cached="https:/lrclib.net/api/get-cached"
+api_search="https:/lrclib.net/api/search"
+#TODO: use different api endpoints depending on status codes? 
+request() {
+  filename="$1"
+  json_data=$(get_metadata "$filename")
+  artist=$(echo "$json_data" | jq -r '.[0].Artist')
+  title=$(echo "$json_data" | jq -r '.[0].Title')
+  album=$(echo "$json_data" | jq -r '.[0].Album')
+  duration=$(get_duration "$filename" | awk -F, '{ printf "%.0f", $2 }')
+  if [[ $artist == "null" || $title == "null" || $album == "null" ]]; then
+    log_to_file "ERROR: Metadata is null."
+    return 1
+  fi
+  
+  log_to_file "Finding lyrics for $artist - $title - $album ($duration s)."
+
+  # curl api/get
+  curl -G -H "User-Agent: lrcget/2000" \
+    --data-urlencode "artist_name=$artist" \
+    --data-urlencode "track_name=$title" \
+    --data-urlencode "album_name=$album" \
+    --data-urlencode "duration=$duration" \
+    "$api_get" | jq -r 'if .instrumental? == true then halt_error(2)
+                        elif .syncedLyrics? != null then .syncedLyrics 
+                        elif .plainLyrics? != null then .plainLyrics 
+			else halt_error(1) end'
+  rc=$?
+  
+  # use search endpoint if specifics failed
+  if [ $rc -eq 1 ]; then
+    log_to_file "ERROR: Track not found. Trying api/search."
+    # curl api/search
+    curl -G -H "User-Agent: lrcget/2000" \
+      --data-urlencode "track_name=$title" \
+      --data-urlencode "album_name=$album" \
+      "$api_search" | jq -r 'if .[0].syncedLyrics? != null then .[0].syncedLyrics 
+                             elif .[0].plainLyrics? != null then .[0].plainLyrics 
+  			     else halt_error(1) end'
+    if [[ $? -eq 0 ]]; then
+      log_to_file "SUCCESS: Lyrics found using api/search."
+    elif [[ $? -eq 1 ]]; then
+      log_to_file "ERROR: Track not found in api/search."
+      return 1
+    fi
+  elif [[ $rc -eq 2 ]]; then
+    log_to_file "Did not find lyrics for instrumental track."
+    return 2
+  else
+    log_to_file "SUCCESS: Lyrics found using api/get."
+  fi
+
+  return 0
+} # request
+
+# multiple_files() {
+#for file in "$1/*.flac"; do 
+#  request
+#done
+# } # multiple_files
+
+# ###################################################################### #
+# creates name for output .lrc file and calls request() to gather lyrics #
+# args: $1 - audio filename to act on                                    #
+#                                                                        #
+# returns: 0 - success                                                   #
+# ###################################################################### #
+
+main() {
+  filename="$1"
+  lrc_file="${filename%.*}.lrc"
+
+  # if lrc file does not exist
+  if ! [[ -e $lrc_file ]]; then
+    lrc_content=$(request "$filename")
+    rc=$?
+    if [ $rc -eq 0 ]; then
+      echo "$lrc_content" > "$lrc_file"
+      log_to_file "Lyrics placed in $lrc_file."
+    fi
+  else
+    log_to_file "Lyrics file already exists"
+  fi
+
+  return $rc
+} # main
+
+##################################################
+##################################################
+LOG_FILE=$(date +"%Y_%m_%d").log
+# helper function to log to file
+log_to_file() {
+  echo "$(date +"%H:%M:%S") $1" >> $LOG_FILE
+}
+
+if [ -z "$1" ]; then
+  echo "run with path to audio file!" 
+elif [ -f "$1" ]; then
+  main "$1"
+else
+  echo "file does not exist"
+  echo "run with path to audio file!" 
+  exit 1
+fi
+
