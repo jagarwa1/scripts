@@ -15,9 +15,17 @@ process_dir(){
   local source_dir="$1"
   local dest_dir="$2"
   exiftool -ext+ AVI -v0 -P -m -r \
+    '-Directory<'"$DEST"'${CreateDate#;DateFmt("%Y/%m/%d")}' \
     '-Directory<'"$DEST"'${dateTimeOriginal#;DateFmt("%Y/%m/%d")}' \
+    '-Filename<${CreateDate#;DateFmt("%Y_%m_%d_%H-%M-%S")}_${Model}%-c.${FileTypeExtension}' \
     '-Filename<${dateTimeOriginal#;DateFmt("%Y_%m_%d_%H-%M-%S")}_${Model}%-c.${FileTypeExtension}' \
     "$source_dir";
+}
+
+scan_library(){
+  local url=immich.nimblybimbly.rocks
+  local library_id=77d25599-866c-4e50-8b01-8ac0886772a8
+  curl -L -X POST "$url/api/libraries/$library_id/scan" -H "Content-Type: application/json" -H "Accept: application/json" -H "x-api-key: $IMMICH_API_KEY"
 }
 
 # requires SRC and DEST
@@ -40,12 +48,14 @@ if [ -d "$1" ]; then
     inotifywait -e create "$SRC"
 
     # wait again to see when file creation and modification stops
-    echo "File creation detected! Wakeup triggered, onto Stage 2!"
+    echo "File creation detected! Wakeup triggered, onto Stage 2: Waiting for file transfer to finish."
     inotifywait -e create -e modify -t 60 -m "$SRC" > /dev/null 2>&1
 
-    echo "No new file activity in 60 seconds. Assuming upload is finished. Onto Stage 3."
+    echo "No new file activity in 60 seconds. Assuming upload is finished. Onto Stage 3: processing directory."
     process_dir "$SRC" "$DEST"
 
+    echo "Triggering Immich library scan"
+    scan_library
     echo "Resetting to Stage 1..."
   done
 else

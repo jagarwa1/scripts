@@ -1,1 +1,12 @@
-/etc/systemd/system/monitor-photo-uploads.service
+[Unit]
+Description=Monitor a photo import dir for new files. Move the files to destination directories based on date metadata.
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/img-watch-and-move /media/IceCube/Pictures/IMPORT/ /media/IceCube/Pictures/
+Restart=on-failure
+User=jagarwa
+EnvironmentFile=/home/jagarwa/scripts/monitor-import-dir/.env
+
+[Install]
+WantedBy=multi-user.target
