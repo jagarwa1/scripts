@@ -4,7 +4,7 @@ SCRIPTS := \
     lastfm-rb-scrobbler/lastfm-sync \
     monitor-import-dir/img-watch-and-move \
     organize-and-move \
-
+    lrcget
 .SILENT: install uninstall
 
 # create symbolic links
