@@ -37,6 +37,7 @@ get_metadata() {
 get_duration() {
   ffprobe -v quiet -print_format csv -show_entries format=duration "$1"
 }
+
 # ###################################################################### #
 # curl GET request with url encoded content. use /api/get with duration, #
 # or /api/search if no duration. jq parses json response.                #
@@ -44,15 +45,36 @@ get_duration() {
 #                                                                        #
 # args: $1 - file to act on                                              #
 #                                                                        #
-# returns: 0 - success                                                   #
-#          1 - failed to find lyrics                                     #
-#          2 - track is instrumental; no lyrics found                    #
+# returns: 0 - success finding synced lyrics                             #
+#          1 - success finding plain lyrics                              #
+#          2 - failed to find lyrics                                     #
+#          3 - track is instrumental; no lyrics found                    #
 # ###################################################################### #
 
 api_get="https:/lrclib.net/api/get"
 api_get_cached="https:/lrclib.net/api/get-cached"
 api_search="https:/lrclib.net/api/search"
 #TODO: use different api endpoints depending on status codes? 
+
+# curl api/get
+curl_get() {
+  curl -G -H "User-Agent: lrcget/2000" \
+    --data-urlencode "artist_name=$artist" \
+    --data-urlencode "track_name=$title" \
+    --data-urlencode "album_name=$album" \
+    --data-urlencode "duration=$duration" \
+    "$api_get"
+}
+
+# curl api/search
+curl_search() {
+  curl -G -H "User-Agent: lrcget/2000" \
+    --data-urlencode "artist_name=$artist" \
+    --data-urlencode "track_name=$title" \
+    --data-urlencode "album_name=$album" \
+    "$api_search"
+}
+
 request() {
   filename="$1"
   json_data=$(get_metadata "$filename")
@@ -66,43 +88,36 @@ request() {
   fi
   
   log_to_file "Finding lyrics for $artist - $title - $album ($duration s)."
-
+  
   # curl api/get
-  curl -G -H "User-Agent: lrcget/2000" \
-    --data-urlencode "artist_name=$artist" \
-    --data-urlencode "track_name=$title" \
-    --data-urlencode "album_name=$album" \
-    --data-urlencode "duration=$duration" \
-    "$api_get" | jq -r 'if .instrumental? == true then halt_error(2)
-                        elif .syncedLyrics? != null then .syncedLyrics 
-                        elif .plainLyrics? != null then .plainLyrics 
-			else halt_error(1) end'
-  rc=$?
+  result=$(curl_get | jq -r 'if .instrumental? == true then {rc: 3} | tojson
+                                elif .syncedLyrics? != null then {lyrics: .syncedLyrics, rc: 0} | tojson
+			        elif .plainLyrics? != null then {lyrics: .plainLyrics, rc: 1} | tojson
+			        else {rc: 2} | tojson end')
+
+  rc=$(echo "$result" | jq -r '.rc')
   
   # use search endpoint if specifics failed
-  if [ $rc -eq 1 ]; then
+  if [ $rc -eq 2 ]; then
     log_to_file "ERROR: Track not found. Trying api/search."
-    # curl api/search
-    curl -G -H "User-Agent: lrcget/2000" \
-      --data-urlencode "track_name=$title" \
-      --data-urlencode "album_name=$album" \
-      "$api_search" | jq -r 'if .[0].syncedLyrics? != null then .[0].syncedLyrics 
-                             elif .[0].plainLyrics? != null then .[0].plainLyrics 
-  			     else halt_error(1) end'
-    if [[ $? -eq 0 ]]; then
-      log_to_file "SUCCESS: Lyrics found using api/search."
-    elif [[ $? -eq 1 ]]; then
+    result=$(curl_search | jq -r 'if .[0].syncedLyrics? != null then {lyrics: .[0].syncedLyrics, rc: 0} | tojson
+                                  elif .[0].plainLyrics? != null then {lyrics: .[0].plainLyrics, rc: 1 } | tojson
+		                  else {rc: 2} | tojson end')
+  
+    rc=$(echo "$result" | jq -r '.rc')
+    if [[ $rc -eq 0 || $rc -eq 1 ]]; then
+      log_to_file "SUCCESS: Lyrics found using api/search. rc=$rc"
+    elif [[ $rc -eq 2 ]]; then
       log_to_file "ERROR: Track not found in api/search."
-      return 1
     fi
-  elif [[ $rc -eq 2 ]]; then
-    log_to_file "Did not find lyrics for instrumental track."
-    return 2
+
+  elif [[ $rc -eq 3 ]]; then
+    log_to_file "WARNING: Did not find lyrics for instrumental track."
   else
     log_to_file "SUCCESS: Lyrics found using api/get."
   fi
-
-  return 0
+  
+  echo "$result" 
 } # request
 
 # multiple_files() {
@@ -115,26 +130,36 @@ request() {
 # creates name for output .lrc file and calls request() to gather lyrics #
 # args: $1 - audio filename to act on                                    #
 #                                                                        #
-# returns: 0 - success                                                   #
+# returns: -1 - failed to write to lyric file                            #
+#           0 - success finding synced lyrics                            #
+#           1 - success finding plain lyrics                             #
+#           2 - failed to find lyrics                                    #
+#           3 - track is instrumental; no lyrics found                   #
 # ###################################################################### #
 
 main() {
   filename="$1"
   lrc_file="${filename%.*}.lrc"
+  txt_file="${filename%.*}.txt"
 
   # if lrc file does not exist
   if ! [[ -e $lrc_file ]]; then
-    lrc_content=$(request "$filename")
-    rc=$?
-    if [ $rc -eq 0 ]; then
-      echo "$lrc_content" > "$lrc_file"
-      log_to_file "Lyrics placed in $lrc_file."
+    lrc_result=$(request "$filename")
+    rc=$(echo "$lrc_result" | jq -r '.rc')
+    lyrics=$(echo "$lrc_result" | jq -r '.lyrics')
+
+    if [[ $rc -eq 0 ]]; then
+      echo "$lyrics" > "$lrc_file" || (log_to_file "ERROR: Failed to write to $lrc_file"; exit -1)
+      log_to_file "Synced Lyrics placed in $lrc_file."
+    elif [[ $rc -eq 1 && ! -e $txt_file ]]; then
+      echo "$lyrics" > "$txt_file" || (log_to_file "ERROR: Failed to write to $txt_file"; exit -1)
+      log_to_file "Plain Lyrics placed in $txt_file."
     fi
+
+    return $rc
   else
     log_to_file "Lyrics file already exists"
   fi
-
-  return $rc
 } # main
 
 ##################################################
