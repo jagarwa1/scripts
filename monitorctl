@@ -1,0 +1,122 @@
+#!/bin/bash
+
+# Monitorctl
+# control upstairs, downstairs, and virtual monitor
+usage() {
+  echo "$(basename $0): control connected monitors with kscreen-doctor"
+  echo "status [all]                 list enabled inputs. optionally list all"
+  echo
+  echo "upstairs-on                  control upstairs monitor"
+  echo "        -off"  
+  echo
+  echo "downstairs-on                control downstairs monitor"
+  echo "          -off"  
+  echo
+  echo "switch-up-down               switch state of upstairs and downstairs monitor"
+  echo
+  echo "virtual-on                   control virtual monitor"
+  echo "       -off"  
+  echo
+  echo "moonlight-on                 enables virtual display and disables physical display"  
+  echo "         -off                enables physical display and disables virtual display"  
+  echo
+  echo "moonlight-toggle             moonlight-on, then reverts it with moonlight-off next run"  
+}
+
+hdmi="HDMI-A-1"
+dp="DP-1"
+virt="DP-2"
+
+upstairs-on() {
+  kscreen-doctor output."$dp".enable
+  touch /tmp/upstairs-on
+}
+
+upstairs-off() {
+  kscreen-doctor output."$dp".disable
+  [[ -f /tmp/upstairs-on ]] && rm /tmp/upstairs-on
+}
+
+downstairs-on() {
+  kscreen-doctor output."$hdmi".enable
+  touch /tmp/downstairs-on
+}
+
+downstairs-off() {
+  kscreen-doctor output."$hdmi".disable
+  [[ -f /tmp/downstairs-on ]] && rm /tmp/downstairs-on
+}
+
+virtual-on() {
+  kscreen-doctor output."$virt".enable
+  touch /tmp/virtual-on
+}
+
+virtual-off() {
+  kscreen-doctor output."$virt".disable
+  [[ -f /tmp/virtual-on ]] && rm /tmp/virtual-on
+}
+
+moonlight-on() {
+  # turn off whichever monitor is on but keep the tmp file.
+  ( [[ -f /tmp/upstairs-on ]] && upstairs-off && touch /tmp/virtual-on-u ) || ( [[ -f /tmp/downstairs-on ]] && downstairs-off && touch /tmp/virtual-on-d )
+  kscreen-doctor output."$virt".enable
+}
+
+moonlight-off() {
+  # enable whichever monitor was on before virtual one 
+  ( [[ -f /tmp/virtual-on-u ]] && upstairs-on && rm /tmp/virtual-on-u ) || ( [[ -f /tmp/virtual-on-d ]] && downstairs-on && rm /tmp/virtual-on-d )
+  kscreen-doctor output."$virt".disable
+}
+
+moonlight-toggle() {
+  if [[ -f /tmp/virtual-on-u || -f /tmp/virtual-on-d ]]; then
+    # enable whichever monitor was on before virtual one 
+    ( [[ -f /tmp/virtual-on-u ]] && upstairs-on && rm /tmp/virtual-on-u ) || ( [[ -f /tmp/virtual-on-d ]] && downstairs-d && rm tmp/virtual-on-d )
+    kscreen-doctor output."$virt".disable
+  else
+    kscreen-doctor output."$virt".enable
+    # turn off whichever monitor is on but keep the tmp file.
+    ( [[ -f /tmp/upstairs-on ]] && upstairs-off && touch /tmp/virtual-on-u ) || ( [[ -f /tmp/downstairs-on ]] && downstairs-off && /tmp/virtual-on-d )
+  fi
+}
+
+switch-up-down() {
+  if [[ -f /tmp/upstairs-on ]]; then
+    kscreen-doctor output."$hdmi".enable output."$dp".disable
+    rm /tmp/upstairs-on
+    touch /tmp/downstairs-on
+  elif [[ -f /tmp/downstairs-on ]]; then
+    kscreen-doctor output."$hdmi".disable output."$dp".enable
+    rm /tmp/downstairs-on
+    touch /tmp/upstairs-on
+  fi
+}
+
+status() {
+  kscreen-doctor -j | jq -r '.outputs[] | .name, .connected, .enabled' |
+  while read name; do
+    read connected
+    [[ $connected = "true" ]] && connected="Connected" || connected="Disconnected"
+   
+    read enabled
+    [[ $enabled = "true" ]] && enabled="Enabled" || enabled="Disabled"
+    
+    if [[ $enabled = "Enabled" || $1 == "all" ]]; then
+      echo "$name"
+      echo "  $connected"
+      echo "  $enabled"
+    fi
+  done
+}
+################################################################
+################################################################
+case "$1" in
+    status|upstairs-on|upstairs-off|downstairs-on|downstairs-off|virtual-on|virtual-off|switch-up-down|moonlight-on|moonlight-off|moonlight-toggle)
+        $@
+	;;
+    *)
+        # error
+        usage
+	exit 1
+esac
