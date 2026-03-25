@@ -4,7 +4,8 @@ SCRIPTS := \
     lastfm-rb-scrobbler/lastfm-sync \
     monitor-import-dir/img-watch-and-move \
     organize-and-move \
-    lrcget
+    lrcget \
+    mkipod
 .SILENT: install uninstall
 
 # create symbolic links

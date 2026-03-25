@@ -8,8 +8,8 @@ usage(){
   echo "-n        dry run" 1>&2;
   echo "-v        verbose" 1>&2;
   echo "-r        resize cover art" 1>&2;
-  echo "-d       del extraneous files" 1>&2;
-  exit 1;
+  echo "-d        del extraneous files" 1>&2;
+  exit ;
 }
 
 spinner() {
@@ -83,6 +83,47 @@ resize_cover_art(){
 	echo
 }
 
+case "$1" in 
+	del_extra_files)
+		# requires DEST
+        	if [ "$#" -lt 2 ]; then
+                    echo "Usage: $0 delete <DEST>" 1>&2;
+                    exit 
+		fi
+		DEST=$2
+                del_extra_files
+		exit ;;
+	resize_cover_art)
+		# requires DEST
+                if [ "$#" -lt 2 ]; then
+                  echo "Usage: $0 resize <DEST>" 1>&2;
+                  exit 
+		 fi
+		 DEST=$2
+                 resize_cover_art
+		 exit ;;
+esac
+
+d_flag=0
+r_flag=0
+dry=0
+verbose=0
+while getopts "h?nvdr" flag;
+do
+	case "${flag}" in
+                d)	d_flag=1 
+			;;
+		r)      r_flag=1 
+			;;
+		n) 	dry=1 
+			;;
+		v) 	verbose=1 
+			;;
+		h|\?)	usage
+		;;
+	esac
+done
+
 # requires SRC and DEST
 if [ "$#" -lt 2 ]; then
   	usage
@@ -91,31 +132,12 @@ fi
 SRC=$1
 DEST=$2
 
-dry=0
-verbose=0
-while getopts "h?nvdr" flag;
-do
-	case "${flag}" in
-		d)	del_extra_files
-			exit
-		;;
-		r) 	resize_cover_art
-			exit
-		;;
-		n) 	dry=1
-		;;
-		v) 	verbose=1
-		;;
-		h|\?)	usage
-		;;
-	esac
-done
 # handle positional arguments after the optional
 shift $((OPTIND - 1))
 
-# need to echo the literal '-n' which needs to -e and octal rep of -
+# need to echo the literal '-n' which needs -e and octal repr of -
 transfercoder -E "-codec:a libvorbis -q:a 7" -r "rsync -a" $([ $verbose -eq 1 ] && echo '-v') $([ $dry -eq 1 ] && echo -e '\055n') "$SRC" "$DEST"
 
-del_extra_files
+if [[ d_flag -eq 1 ]]; then del_extra_files; fi
 
-resize_cover_art
+if [[ r_flag -eq 1 ]]; then resize_cover_art; fi
