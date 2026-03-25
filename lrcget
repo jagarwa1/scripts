@@ -120,11 +120,6 @@ request() {
   echo "$result" 
 } # request
 
-# multiple_files() {
-#for file in "$1/*.flac"; do 
-#  request
-#done
-# } # multiple_files
 
 # ###################################################################### #
 # creates name for output .lrc file and calls request() to gather lyrics #
@@ -161,6 +156,12 @@ main() {
     log_to_file "Lyrics file already exists"
   fi
 } # main
+
+# TODO: implement passing dir
+multiple_files() {
+  shopt -s globstar
+  for file in **/{*.ogg,*mp3,*.m4a,*.flac}; do main "$file"; done
+} # multiple_files
 
 ##################################################
 ##################################################
